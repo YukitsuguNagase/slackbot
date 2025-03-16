@@ -56,6 +56,11 @@ def lambda_handler(event, context):
         else:
             keyword, description = parts[1], parts[2]
             response = update_word(keyword, description)
+    elif text == "!list":
+        response = list_words()
+    elif text.startswith("!deleteword "):
+        keyword = text.split(" ", 1)[1].strip()
+        response = delete_word(keyword)
     else:
         response = "⚠️ 無効なコマンドです"
 
@@ -84,6 +89,28 @@ def update_word(keyword, description):
     )
     logger.info(f"Updated DB: {keyword} -> {description}")
     return f"🔄 `{keyword}` の情報を更新しました！"
+
+def list_words():
+    """DynamoDB からすべてのキーワードを取得"""
+    try:
+        response = table.scan(ProjectionExpression="keyword")
+        words = [item["keyword"] for item in response.get("Items", [])]
+        if not words:
+            return "⚠️ 登録されているキーワードがありません。"
+        return "📋 登録済みのキーワード:\n- " + "\n- ".join(words)
+    except Exception as e:
+        logger.error(f"Failed to list words: {str(e)}")
+        return "⚠️ キーワード一覧の取得に失敗しました。"
+
+def delete_word(keyword):
+    """DynamoDB から指定したキーワードを削除"""
+    try:
+        response = table.delete_item(Key={"keyword": keyword})
+        logger.info(f"Deleted word: {keyword}")
+        return f"✅ '{keyword}' を削除しました！"
+    except Exception as e:
+        logger.error(f"Failed to delete word: {str(e)}")
+        return f"⚠️ '{keyword}' の削除に失敗しました。"
 
 def send_message(channel, text):
     """Slack にメッセージを送信"""
