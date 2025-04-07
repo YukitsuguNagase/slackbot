@@ -1,4 +1,3 @@
-import json
 import os
 import boto3
 import logging
@@ -15,33 +14,36 @@ table = dynamodb.Table(DYNAMODB_TABLE)
 client = WebClient(token=SLACK_BOT_TOKEN)
 
 def lambda_handler(event, context):
-    text = event["text"]
+    text = event["text"].strip()
     channel = event["channel"]
 
-    if text.startswith("!word "):
-        keyword = text.split(" ", 1)[1].strip()
-        response = get_word(keyword)
-    elif text.startswith("!addword "):
-        parts = text.split(" ", 2)
-        if len(parts) < 3:
-            response = "⚠️ 正しい形式: `!addword <keyword> <description>`"
-        else:
-            keyword, description = parts[1], parts[2]
-            response = add_word(keyword, description)
-    elif text.startswith("!update "):
-        parts = text.split(" ", 2)
-        if len(parts) < 3:
-            response = "⚠️ 正しい形式: `!update <keyword> <description>`"
-        else:
-            keyword, description = parts[1], parts[2]
-            response = update_word(keyword, description)
-    elif text == "!list":#登録済みキーワードの一覧を表示
-        response = list_words()
-    elif text.startswith("!deleteword "):
-        keyword = text.split(" ", 1)[1].strip()
-        response = delete_word(keyword)
-    else:
-        response = "⚠️ 無効なコマンドです"
+    # コマンドごとの処理を辞書で定義
+    command_map = {
+        "!word": {"func": get_word, "min_args": 1, "usage": "!word <keyword>"},
+        "!addword": {"func": add_word, "min_args": 2, "usage": "!addword <keyword> <description>"},
+        "!update": {"func": update_word, "min_args": 2, "usage": "!update <keyword> <description>"},
+        "!deleteword": {"func": delete_word, "min_args": 1, "usage": "!deleteword <keyword>"},
+        "!list": {"func": list_words, "min_args": 0, "usage": "!list"},
+    }
+
+    response = "⚠️ 無効なコマンドです"
+    for command, info in command_map.items():
+        if text.startswith(command):
+            args = text[len(command):].strip()
+            if info["min_args"] == 0:
+                response = info["func"]()
+            elif info["min_args"] == 1:
+                if not args:
+                    response = f"⚠️ 正しい形式: `{info['usage']}`"
+                else:
+                    response = info["func"](args)
+            elif info["min_args"] == 2:
+                parts = args.split(" ", 1)
+                if len(parts) < 2:
+                    response = f"⚠️ 正しい形式: `{info['usage']}`"
+                else:
+                    response = info["func"](parts[0], parts[1])
+            break
 
     send_message(channel, response)
 
@@ -70,7 +72,7 @@ def list_words():
 
 def delete_word(keyword):
     table.delete_item(Key={"keyword": keyword})
-    return f"✅ '{keyword}' を削除しました！"
+    return f"✅ `{keyword}` を削除しました！"
 
 def send_message(channel, text):
     client.chat_postMessage(channel=channel, text=text)
