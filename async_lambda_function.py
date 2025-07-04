@@ -1,7 +1,8 @@
 import os
-import time  # timestamp用
+import time
 import boto3
 import logging
+import random
 from slack_sdk import WebClient
 
 logging.basicConfig(level=logging.INFO)
@@ -48,8 +49,20 @@ def lambda_handler(event, context):
             "func": list_words,
             "min_args": 0,
             "usage": "!list",
-            "exact": True  # 引数なしなので、完全一致で判定
+            "exact": True
         },
+        "!search": {
+            "func": search_words,
+            "min_args": 1,
+            "usage": "!search <keyword_part>",
+            "exact": False
+        },
+        "!random": {
+            "func": random_words,
+            "min_args": 0,
+            "usage": "!random",
+            "exact": True
+        }
     }
 
     response = "⚠️ 無効なコマンドです"
@@ -81,11 +94,11 @@ def get_word(keyword):
     return response.get("Item", {}).get("description", "わかりませーん")
 
 def add_word(keyword, description):
-    created_at = int(time.time())  # 現在のUNIX時間を追加
+    created_at = int(time.time())
     table.put_item(Item={
         "keyword": keyword,
         "description": description,
-        "created_at": created_at  # 新規項目
+        "created_at": created_at
     })
     return f"✅ `{keyword}` を登録しました！"
 
@@ -99,10 +112,9 @@ def update_word(keyword, description):
 
 def list_words():
     try:
-        response = table.scan(ProjectionExpression="keyword, created_at")  # created_atも取得
+        response = table.scan(ProjectionExpression="keyword, created_at")
         items = response.get("Items", [])
 
-        # created_atで降順にソートして10件に制限
         sorted_items = sorted(
             items,
             key=lambda x: x.get("created_at", 0),
@@ -122,6 +134,30 @@ def list_words():
 def delete_word(keyword):
     table.delete_item(Key={"keyword": keyword})
     return f"✅ `{keyword}` を削除しました！"
+
+def search_words(part):
+    try:
+        response = table.scan(ProjectionExpression="keyword")
+        matches = [item["keyword"] for item in response.get("Items", []) if part.lower() in item["keyword"].lower()]
+        if not matches:
+            return "🔍 一致するキーワードが見つかりませんでした。"
+        return "🔍 部分一致したキーワード:\n- " + "\n- ".join(matches)
+    except Exception as e:
+        logger.error(f"Failed to search keywords: {str(e)}")
+        return "⚠️ 検索中にエラーが発生しました。"
+
+def random_words():
+    try:
+        response = table.scan(ProjectionExpression="keyword")
+        items = response.get("Items", [])
+        if not items:
+            return "⚠️ 登録されているキーワードがありません。"
+        selected = random.sample(items, min(10, len(items)))
+        keywords = [item["keyword"] for item in selected]
+        return "🎲 ランダムなキーワード:\n- " + "\n- ".join(keywords)
+    except Exception as e:
+        logger.error(f"Failed to get random keywords: {str(e)}")
+        return "⚠️ ランダム取得中にエラーが発生しました。"
 
 def send_message(channel, text):
     client.chat_postMessage(channel=channel, text=text)
